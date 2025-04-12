@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DALL·E Archive Viewer</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 1rem;
+      font-family: sans-serif;
+      background: #121212;
+      color: #eee;
+    }
+    input {
+      background: #1e1e1e;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.4rem;
+      margin: 0.2rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .card {
+      background: #1a1a1a;
+      padding: 0.5rem;
+      border-radius: 10px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.4);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .card:hover {
+      transform: scale(1.02);
+    }
+    .card img {
+      width: 100%;
+      border-radius: 8px;
+    }
+    #resultsCount {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: #888;
+    }
+    #modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+    }
+    #modalContent {
+      background: #222;
+      padding: 1rem;
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 12px;
+      overflow: auto;
+      position: relative;
+      box-shadow: 0 0 20px rgba(0,0,0,0.7);
+    }
+    #modalContent img {
+      width: 100%;
+      border-radius: 10px;
+    }
+    .meta, .prompt {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #ccc;
+      word-wrap: break-word;
+    }
+    #closeModal {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: #444;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>DALL·E Archive Viewer</h1>
+  <div>
+    <input type="text" id="search" placeholder="Search prompt, filename, gen ID..." />
+    <input type="date" id="fromDate" />
+    <input type="date" id="toDate" />
+  </div>
+  <div id="resultsCount"></div>
+  <div class="grid" id="gallery"></div>
+
+  <div id="modal">
+    <div id="modalContent">
+      <button id="closeModal">&times;</button>
+      <div id="modalInner"></div>
+    </div>
+  </div>
+
+  <script>
+    let metadata = [];
+    let gallery = document.getElementById("gallery");
+    let searchInput = document.getElementById("search");
+    let resultsCount = document.getElementById("resultsCount");
+    let fromDate = document.getElementById("fromDate");
+    let toDate = document.getElementById("toDate");
+    let modal = document.getElementById("modal");
+    let modalInner = document.getElementById("modalInner");
+    let closeModal = document.getElementById("closeModal");
+
+    fetch("dalle_metadata.json")
+      .then(res => res.json())
+      .then(data => {
+        metadata = data;
+        render();
+      });
+
+    searchInput.addEventListener("input", render);
+    fromDate.addEventListener("input", render);
+    toDate.addEventListener("input", render);
+    closeModal.addEventListener("click", () => modal.style.display = "none");
+
+    function render() {
+      let query = searchInput.value.toLowerCase();
+      let from = fromDate.value;
+      let to = toDate.value;
+
+      let filtered = metadata.filter(entry => {
+        const matchText = (entry.prompt || "") + (entry.filename || "") + (entry.gen_id || "");
+        const matchesQuery = matchText.toLowerCase().includes(query);
+        const ts = entry.timestamp || "";
+        const matchesFrom = from ? ts >= from : true;
+        const matchesTo = to ? ts <= to + "T23:59:59" : true;
+        return matchesQuery && matchesFrom && matchesTo;
+      });
+
+      gallery.innerHTML = "";
+      resultsCount.textContent = `${filtered.length} image${filtered.length !== 1 ? "s" : ""} shown`;
+
+      filtered.forEach(entry => {
+        let card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<img src="${entry.path}" loading="lazy" alt="${entry.filename}" />`;
+        card.onclick = () => showDetails(entry);
+        gallery.appendChild(card);
+      });
+    }
+
+    function showDetails(entry) {
+      modal.style.display = "flex";
+      modalInner.innerHTML = `
+        <img src="${entry.path}" alt="${entry.filename}" />
+        <div class="meta">
+          <strong>${entry.filename}</strong><br />
+          ${entry.timestamp ? `🕒 ${entry.timestamp}<br />` : ""}
+          ${entry.gen_id ? `🧬 gen_id: ${entry.gen_id}<br />` : ""}
+          ${entry.seed ? `🌱 seed: ${entry.seed}<br />` : ""}
+        </div>
+        <div class="prompt">${entry.prompt || "—"}</div>
+      `;
+    }
+    
+    let currentIndex = -1;
+
+function showDetails(entry) {
+  currentIndex = metadata.findIndex(item => item.file_id === entry.file_id);
+  modal.style.display = "flex";
+  renderModal(entry);
+}
+
+function renderModal(entry) {
+  modalInner.innerHTML = `
+    <img src="${entry.path}" alt="${entry.filename}" />
+    <div class="meta">
+      <strong>${entry.filename}</strong><br />
+      ${entry.timestamp ? `🕒 ${entry.timestamp}<br />` : ""}
+      ${entry.gen_id ? `🧬 gen_id: ${entry.gen_id}<br />` : ""}
+      ${entry.seed ? `🌱 seed: ${entry.seed}<br />` : ""}
+    </div>
+    <div class="prompt">${entry.prompt || "—"}</div>
+  `;
+}
+
+// Keyboard nav: esc to close, arrows to switch
+document.addEventListener("keydown", e => {
+  if (modal.style.display === "flex") {
+    if (e.key === "Escape") {
+      modal.style.display = "none";
+    } else if (e.key === "ArrowRight") {
+      if (currentIndex < metadata.length - 1) {
+        currentIndex++;
+        renderModal(metadata[currentIndex]);
+      }
+    } else if (e.key === "ArrowLeft") {
+      if (currentIndex > 0) {
+        currentIndex--;
+        renderModal(metadata[currentIndex]);
+      }
+    }
+  }
+});
+
+  </script>
+</body>
+</html>
